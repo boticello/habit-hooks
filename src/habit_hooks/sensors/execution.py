@@ -78,7 +78,7 @@ class Execution:
             transformer,
             (
                 "transformer",
-                lambda: self.spawner.run(argv, payload, tools=tools),
+                lambda: self.spawner_for(transformer).run(argv, payload, tools=tools),
                 lambda result: result.returncode != 0 or not result.stdout.strip(),
             ),
         )
@@ -95,7 +95,11 @@ class Execution:
         tools = sensor.tools_that_read_its_arguments
         return _run_and_parse(
             sensor,
-            ("sensor", lambda: self.spawner.run(argv, tools=tools), sensor_crashed),
+            (
+                "sensor",
+                lambda: self.spawner_for(sensor).run(argv, tools=tools),
+                sensor_crashed,
+            ),
         )
 
     def _sensor_commands(self, sensor: Part) -> list[list[str]]:
@@ -130,6 +134,6 @@ class Execution:
             return self.scope.files
         return matching(self.scope.files, part.files)
 
-    @property
-    def spawner(self) -> Spawner:
-        return Spawner(self.project_dir, self.timeout)
+    def spawner_for(self, part: Part) -> Spawner:
+        timeout = self.timeout if part.timeout is None else part.timeout
+        return Spawner(self.project_dir, timeout)

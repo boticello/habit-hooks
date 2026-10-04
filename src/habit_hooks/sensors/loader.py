@@ -45,6 +45,7 @@ class PluginLoader:
             part,
             args=self._project_args(part.name),
             files=self._sensor_setting(part.name, entry, "files"),
+            timeout=self._sensor_timeout(part.name, part.timeout),
         )
         inline_spec.refuse_unusable_report(part)
         return self._with_its_tools("sensors", part)
@@ -63,6 +64,7 @@ class PluginLoader:
                 part,
                 args=self._sensor_setting(name, spec, "args") or [],
                 files=self._sensor_setting(name, spec, "files"),
+                timeout=self._sensor_timeout(name, spec.get("timeout")),
             )
         return self._with_its_tools(kind, part)
 
@@ -74,6 +76,13 @@ class PluginLoader:
         override = self.config.sensors.get(name)
         value = getattr(override, key) if override is not None else None
         return value if value is not None else spec.get(key)
+
+    def _sensor_timeout(self, name: str, declared: object) -> float | None:
+        override = self.config.sensors.get(name)
+        value = override.timeout if override is not None else None
+        if value is None:
+            value = declared
+        return inline_spec.timeout_of(value, name)
 
     def _project_args(self, name: str) -> list[str]:
         return self._sensor_setting(name, {}, "args") or []

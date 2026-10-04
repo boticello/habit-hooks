@@ -34,6 +34,7 @@ class SensorOverride:
     disabled: bool | None = None
     files: list[str] | None = None
     args: list[str] | None = None
+    timeout: float | None = None
 
 
 @define

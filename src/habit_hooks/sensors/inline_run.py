@@ -28,7 +28,7 @@ def literal_spelling_of(path: str) -> str:
 def findings_for(sensor: Part, execution) -> list[dict]:
     findings: list[dict] = []
     for argv in _invocations(sensor, execution, execution.scoped_files(sensor)):
-        findings.extend(_invocation_findings(sensor, argv, execution.spawner))
+        findings.extend(_invocation_findings(sensor, argv, execution.spawner_for(sensor)))
     return anchored(findings, execution.project_dir, sensor.name)
 
 

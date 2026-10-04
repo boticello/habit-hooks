@@ -27,6 +27,7 @@ class Part:
     argv: list[str] | None = None
     args: list[str] = field(default_factory=list)
     files: list[str] | None = None
+    timeout: float | None = None
     detectors: dict[str, str | None] = field(default_factory=dict)
     inline: InlineRecipe | None = None
 

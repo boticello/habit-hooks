@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- **A sensor's deadline is configurable: `timeout` under `[sensors.<name>]`.**
+  Every sensor ran under one hard-coded 300-second deadline, so a legitimate
+  sensor that loads a compiler per project — a language linter over a monorepo —
+  was killed as a wedged one the moment the tree grew past what 300 seconds
+  could lint. `[sensors.fsharplint] timeout = 900` gives that sensor room
+  without loosening the leash on every other; a plugin may declare a default
+  for its own sensor, and the project override wins.
+
 ### Fixed
 
 - **On Python 3.13 a plugin's `search_paths` could name a directory outside

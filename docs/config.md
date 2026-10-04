@@ -54,6 +54,7 @@ A `[sensors.<name>]` block overrides a sensor the plugin defines.
 - **`disabled`**: drop the sensor entirely.
 - **`files`**: narrow the run's scope for this sensor alone (list form — no brace expansion). Narrows, never widens — a sensor never sees a file the run was not measuring.
 - **`args`**: replace the sensor's default CLI args wholesale. Only a sensor whose `command` spells `${args}` accepts them (`line-count`, `eslint`, `knip`, `pmd`); `args` on any other sensor stops the run (exit 2). `args = []` clears a default.
+- **`timeout`**: seconds a sensor may run before its run is a failed one (default 300). A plugin may declare its own default for a sensor; the project override wins. A sensor that loads a compiler per project — a language linter over a monorepo — is the case for raising it.
 
 ```toml
 # Turn off a sensor the plugin ships.

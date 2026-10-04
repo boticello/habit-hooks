@@ -26,6 +26,7 @@ _SENSOR_CONSUMERS: dict[str, Callable[[Path], bool]] = {
     "disabled": lambda tmp: _sensor_under(tmp, "disabled = true") == [],
     "args": lambda tmp: _sensor_under(tmp, 'args = ["--z"]')[0].args == ["--z"],
     "files": lambda tmp: _sensor_under(tmp, 'files = ["a/**"]')[0].files == ["a/**"],
+    "timeout": lambda tmp: _sensor_under(tmp, "timeout = 90")[0].timeout == 90.0,
 }
 
 

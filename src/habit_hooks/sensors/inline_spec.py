@@ -8,7 +8,7 @@ from ..config_schema import reject_unknown
 from .model import InlineRecipe, Part
 
 ENTRY_KEYS = frozenset(
-    {"name", "tool", "args", "files", "success_exit_codes", "transform", "report"}
+    {"name", "tool", "args", "files", "timeout", "success_exit_codes", "transform", "report"}
 )
 
 _PLACEHOLDER_OR_PATH = ("$", "/", "\\")
@@ -55,7 +55,24 @@ def part_from(plugin: str, config_path: Path, entry: dict) -> Part:
         transform=_transform(entry.get("transform"), config_path.parent, where),
         report=_a_flag(entry.get("report", False)),
     )
-    return Part(name, config_path.parent, argv=[tool, *args], inline=recipe)
+    return Part(
+        name,
+        config_path.parent,
+        argv=[tool, *args],
+        timeout=timeout_of(entry.get("timeout"), name),
+        inline=recipe,
+    )
+
+
+def timeout_of(value: object, name: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ConfigError(
+            f"sensor {name!r} spells {value!r} as its 'timeout' — a timeout is "
+            "a number of seconds greater than zero"
+        )
+    return float(value)
 
 
 def refuse_unusable_report(part: Part) -> None:
