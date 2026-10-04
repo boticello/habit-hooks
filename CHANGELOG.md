@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **The generic plugin's jscpd fallback no longer requires a `src` directory.**
+  A project without its own jscpd configuration was scanned over the fallback's
+  hard-coded `path: ["src"]`, so a project keeping its code under `lib/` — or
+  anywhere but `src/` — failed the sensor with `Error: path does not exist:
+  src`, and a failed sensor is a failed run. The fallback now scans the project
+  root, where the project's `.gitignore` and the fallback's own ignores keep
+  vendored and generated files out of the duplication report.
+
 - **On Python 3.13 a plugin's `search_paths` could name a directory outside
   your project.** A detector names the directories under the project its tool
   is looked for in, and an entry that climbs out of it is refused — except a
