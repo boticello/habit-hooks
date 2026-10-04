@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- **A snooze now covers only the smells it was fed.** `--snooze` records each
+  smell under the snoozed key, so onboarding a project past one smell's pile —
+  by feeding it a filtered run — leaves every other smell on those files
+  coached. A key hand-written into `.habit-hooks/snooze.json` as a bare string
+  still approves every smell on that file, and an index written before keeps
+  loading unchanged. `--list` prints one line per approved smell, and `--prune`
+  also drops approvals for smells a run no longer reports.
+
 ### Fixed
 
 - **On Python 3.13 a plugin's `search_paths` could name a directory outside

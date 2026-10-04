@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from habit_hooks.snooze import load_index, parse_args, run
+from habit_hooks.snooze import Entry, load_index
 from habit_hooks.snooze_lapse import anchor_file, content_hash, renewed
-from snooze_project import a_project_with, aliased, feed_stdin, finding, snooze
+from snooze_project import a_project_with, aliased, finding, snooze
 
 
 def test_snooze_records_the_anchor_files_content(
@@ -16,7 +16,10 @@ def test_snooze_records_the_anchor_files_content(
     a_project_with(tmp_path, "src/x.ts", "export const a = 1;\n")
     snooze(tmp_path, monkeypatch, [finding("src/x.ts", "src/x.ts")])
     assert load_index(tmp_path) == {
-        "src/x.ts": {"src/x.ts": content_hash(tmp_path / "src/x.ts")}
+        "src/x.ts": Entry(
+            anchors={"src/x.ts": content_hash(tmp_path / "src/x.ts")},
+            smells=frozenset({"oversized-file"}),
+        ),
     }
 
 
@@ -25,11 +28,11 @@ def test_an_edit_changes_the_recorded_content(
 ) -> None:
     a_project_with(tmp_path, "src/x.ts", "export const a = 1;\n")
     snooze(tmp_path, monkeypatch, [finding("src/x.ts", "src/x.ts")])
-    before = load_index(tmp_path)["src/x.ts"]
+    before = load_index(tmp_path)["src/x.ts"].anchors
 
     a_project_with(tmp_path, "src/x.ts", "export const a = 1;\nexport const b = 2;\n")
     snooze(tmp_path, monkeypatch, [finding("src/x.ts", "src/x.ts")])
-    assert load_index(tmp_path)["src/x.ts"] != before
+    assert load_index(tmp_path)["src/x.ts"].anchors != before
 
 
 def test_snoozing_again_replaces_the_entry_rather_than_adding_one(
@@ -42,11 +45,30 @@ def test_snoozing_again_replaces_the_entry_rather_than_adding_one(
     assert list(load_index(tmp_path)) == ["src/x.ts"]
 
 
+def test_snoozing_a_second_smell_extends_the_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from finding import a_finding, an_issue
+
+    a_project_with(tmp_path, "src/x.ts", "export const a = 1;\n")
+    snooze(tmp_path, monkeypatch, [finding("src/x.ts", "src/x.ts")])
+    snooze(
+        tmp_path,
+        monkeypatch,
+        [a_finding(smell="unused-import", issues=[an_issue("src/x.ts")])],
+    )
+    assert load_index(tmp_path)["src/x.ts"].smells == frozenset(
+        {"oversized-file", "unused-import"}
+    )
+
+
 def test_an_anchor_that_is_no_file_records_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     snooze(tmp_path, monkeypatch, [finding("SomeExportedName")])
-    assert load_index(tmp_path) == {"SomeExportedName": {}}
+    assert load_index(tmp_path) == {
+        "SomeExportedName": Entry(anchors={}, smells=frozenset({"oversized-file"})),
+    }
 
 
 @pytest.mark.parametrize("file", [None, 5, ""], ids=["null", "a number", "empty"])
@@ -57,7 +79,7 @@ def test_a_details_file_that_is_no_path_falls_back_to_the_key(
     assert anchor_file(issue) == "k"
 
     snooze(tmp_path, monkeypatch, [{"smell": "s", "details": {}, "issues": [issue]}])
-    assert load_index(tmp_path) == {"k": {}}
+    assert load_index(tmp_path) == {"k": Entry(anchors={}, smells=frozenset({"s"}))}
 
 
 def test_an_unreadable_anchor_keeps_what_was_recorded_before(
@@ -105,10 +127,13 @@ def test_a_key_reported_under_several_files_records_each_of_them(
     snooze(tmp_path, monkeypatch, aliased("src/a.py", "src/b.py"))
 
     assert load_index(tmp_path) == {
-        "requests": {
-            "src/a.py": content_hash(tmp_path / "src/a.py"),
-            "src/b.py": content_hash(tmp_path / "src/b.py"),
-        }
+        "requests": Entry(
+            anchors={
+                "src/a.py": content_hash(tmp_path / "src/a.py"),
+                "src/b.py": content_hash(tmp_path / "src/b.py"),
+            },
+            smells=frozenset({"unused-dependency"}),
+        ),
     }
 
 
@@ -118,29 +143,3 @@ def test_an_anchor_the_run_does_not_report_keeps_what_it_recorded(tmp_path: Path
     both = renewed({}, aliased("src/a.py", "src/b.py"), tmp_path)
 
     assert renewed(both, aliased("src/a.py"), tmp_path) == both
-
-
-def test_prune_keeps_the_recordings_of_a_key_it_keeps(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    a_project_with(tmp_path, "src/x.ts", "export const a = 1;\n")
-    snooze(tmp_path, monkeypatch, [finding("src/x.ts", "src/x.ts")])
-    recorded = load_index(tmp_path)["src/x.ts"]
-
-    feed_stdin(monkeypatch, [finding("src/x.ts", "src/x.ts")])
-    assert run(parse_args(["--prune"]), tmp_path) == 0
-    assert load_index(tmp_path) == {"src/x.ts": recorded}
-
-
-def test_prune_drops_an_anchor_the_run_no_longer_reports(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    a_project_with(tmp_path, "src/a.py", "import requests\n")
-    a_project_with(tmp_path, "src/b.py", "import requests\nrequests.get()\n")
-    snooze(tmp_path, monkeypatch, aliased("src/a.py", "src/b.py"))
-
-    feed_stdin(monkeypatch, aliased("src/b.py"))
-    assert run(parse_args(["--prune"]), tmp_path) == 0
-    assert load_index(tmp_path) == {
-        "requests": {"src/b.py": content_hash(tmp_path / "src/b.py")}
-    }

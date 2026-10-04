@@ -25,7 +25,7 @@ One finding names one smell and lists everywhere it occurs:
 | `details` | A bag of facts about the smell as a whole — e.g. the threshold that was exceeded. The smell decides its shape: whatever its guide template reads, its sensors provide. |
 | `issues` | One entry per occurrence. Each has a `key` and its own `details` bag. |
 
-An issue's `key` is what snoozing acts on, so a sensor chooses it to control what gets snoozed together; it defaults to the file path, which snoozes a whole file at once ([habit-snooze.spec.md](habit-snooze.spec.md)). An issue's `details` bag conventionally carries:
+An issue's `key` is what snoozing acts on, so a sensor chooses it to control what gets snoozed together; it defaults to the file path, so a file's smells share one entry and each approval records the smells it was fed ([habit-snooze.spec.md](habit-snooze.spec.md)). An issue's `details` bag conventionally carries:
 
 | Field | Meaning |
 |-------|---------|

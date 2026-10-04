@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 
-from .snooze_index import Anchors, Index
+from attrs import evolve
+
+from .snooze_index import Anchors, Entry, Index
 
 CONTENT_ALGORITHM = "sha256"
 
@@ -14,12 +17,21 @@ def anchor_file(issue: dict) -> str:
     return file if isinstance(file, str) and file else issue["key"]
 
 
-def anchors_by_key(findings: list[dict]) -> dict[str, set[str]]:
-    anchors: dict[str, set[str]] = {}
+@dataclass(frozen=True)
+class Reported:
+
+    smells: set[str]
+    anchors: set[str]
+
+
+def reported(findings: list[dict]) -> dict[str, Reported]:
+    reported_by_key: dict[str, Reported] = {}
     for finding in findings:
         for issue in finding["issues"]:
-            anchors.setdefault(issue["key"], set()).add(anchor_file(issue))
-    return anchors
+            entry = reported_by_key.setdefault(issue["key"], Reported(set(), set()))
+            entry.smells.add(finding["smell"])
+            entry.anchors.add(anchor_file(issue))
+    return reported_by_key
 
 
 def content_hash(path: Path) -> str | None:
@@ -40,12 +52,34 @@ def holds(recorded: Anchors, anchor: str, project_dir: Path) -> bool:
 
 
 def renewed(index: Index, findings: list[dict], project_dir: Path) -> Index:
-    return index | {
-        key: index.get(key, {}) | _recorded(anchors, project_dir)
-        for key, anchors in anchors_by_key(findings).items()
+    fresh = dict(index)
+    for key, current in reported(findings).items():
+        entry = fresh.get(key, Entry(anchors={}, smells=frozenset()))
+        smells = (
+            entry.smells
+            if entry.smells is None
+            else entry.smells | frozenset(current.smells)
+        )
+        fresh[key] = evolve(entry, anchors=_recorded(entry, current, project_dir), smells=smells)
+    return fresh
+
+
+def _recorded(entry: Entry, current: Reported, project_dir: Path) -> Anchors:
+    fresh = {anchor: content_hash(project_dir / anchor) for anchor in current.anchors}
+    return {**entry.anchors, **{
+        anchor: content for anchor, content in fresh.items() if content is not None
+    }}
+
+
+def pruned(entry: Entry, current: Reported) -> Entry | None:
+    smells = entry.smells
+    if smells is not None:
+        smells = frozenset(smell for smell in smells if smell in current.smells)
+        if not smells:
+            return None
+    anchors = {
+        anchor: content
+        for anchor, content in entry.anchors.items()
+        if anchor in current.anchors
     }
-
-
-def _recorded(anchors: set[str], project_dir: Path) -> Anchors:
-    fresh = {anchor: content_hash(project_dir / anchor) for anchor in anchors}
-    return {anchor: content for anchor, content in fresh.items() if content is not None}
+    return Entry(anchors=anchors, smells=smells)

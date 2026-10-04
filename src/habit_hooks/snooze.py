@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 from .cli import EXIT_TOOL_ERROR, add_version_flag, run_console
-from .snooze_index import INDEX_PATH, Anchors, SnoozeError, Index, load_index, save_index
-from .snooze_lapse import anchor_file, anchors_by_key, holds, renewed
+from .snooze_index import INDEX_PATH, Entry, SnoozeError, Index, load_index, save_index
+from .snooze_lapse import anchor_file, holds, pruned, renewed, reported
 
 __all__ = ["INDEX_PATH", "SnoozeError", "load_index", "main", "save_index"]
 
@@ -16,20 +16,26 @@ SNOOZE_TRANSFORMERS = frozenset({"snooze", "snooze-until-changed"})
 
 
 def transform(findings: list[dict], index: Index, project_dir: Path) -> list[dict]:
+    def still_snoozed(smell: str, issue: dict) -> bool:
+        entry = index.get(issue["key"])
+        if entry is None:
+            return False
+        if entry.smells is not None and smell not in entry.smells:
+            return False
+        return holds(entry.anchors, anchor_file(issue), project_dir)
+
     kept = []
     for finding in findings:
+        smell = finding["smell"]
         issues = [
-            issue for issue in finding["issues"] if not _still_snoozed(issue, index, project_dir)
+            issue
+            for issue in finding["issues"]
+            if not still_snoozed(smell, issue)
         ]
         snoozed_them_all = finding["issues"] and not issues
         if not snoozed_them_all:
             kept.append({**finding, "issues": issues})
     return kept
-
-
-def _still_snoozed(issue: dict, index: Index, project_dir: Path) -> bool:
-    recorded = index.get(issue["key"])
-    return recorded is not None and holds(recorded, anchor_file(issue), project_dir)
 
 
 def read_findings() -> list[dict]:
@@ -39,8 +45,9 @@ def read_findings() -> list[dict]:
 
 def run(args: argparse.Namespace, project_dir: Path) -> int:
     if args.list:
-        for key in load_index(project_dir):
-            sys.stdout.write(key + "\n")
+        for key, entry in sorted(load_index(project_dir).items()):
+            for line in _lines(key, entry):
+                sys.stdout.write(line + "\n")
         return 0
     if args.snooze:
         index = load_index(project_dir)
@@ -51,8 +58,14 @@ def run(args: argparse.Namespace, project_dir: Path) -> int:
     return _write_transformed(project_dir)
 
 
+def _lines(key: str, entry: Entry) -> list[str]:
+    if entry.smells is None:
+        return [key]
+    return [f"{key} {smell}" for smell in sorted(entry.smells)]
+
+
 def _prune(project_dir: Path) -> int:
-    present = anchors_by_key(read_findings())
+    present = reported(read_findings())
     index = load_index(project_dir)
     if index and not present:
         sys.stderr.write(
@@ -62,13 +75,14 @@ def _prune(project_dir: Path) -> int:
             "Index left unchanged.\n"
         )
         return 1
-    kept = {key: _reported(index[key], present[key]) for key in index if key in present}
+    kept: Index = {}
+    for key, entry in index.items():
+        if key in present:
+            survivor = pruned(entry, present[key])
+            if survivor is not None:
+                kept[key] = survivor
     save_index(kept, project_dir)
     return 0
-
-
-def _reported(recorded: Anchors, anchors: set[str]) -> Anchors:
-    return {anchor: content for anchor, content in recorded.items() if anchor in anchors}
 
 
 def _write_transformed(project_dir: Path) -> int:

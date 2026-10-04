@@ -5,11 +5,20 @@ import json
 import os
 from pathlib import Path
 
+from attrs import frozen
+
 INDEX_PATH = Path(".habit-hooks") / "snooze.json"
 
 Anchors = dict[str, str]
 
-Index = dict[str, Anchors]
+Index = dict[str, "Entry"]
+
+
+@frozen
+class Entry:
+
+    anchors: Anchors
+    smells: frozenset[str] | None = None
 
 
 class SnoozeError(Exception):
@@ -35,19 +44,24 @@ def _parse_index(path: Path) -> Index:
     return dict(_entry(path, item) for item in data)
 
 
-def _entry(path: Path, item: object) -> tuple[str, Anchors]:
+def _entry(path: Path, item: object) -> tuple[str, Entry]:
     if isinstance(item, str):
-        return item, {}
-    if (
-        isinstance(item, dict)
-        and isinstance(item.get("key"), str)
-        and _is_anchors(item.get("anchors", {}))
-        and not set(item) - {"key", "anchors"}
-    ):
-        return item["key"], item.get("anchors", {})
+        return item, Entry(anchors={})
+    if isinstance(item, dict) and isinstance(item.get("key"), str):
+        anchors = item.get("anchors", {})
+        smells = item.get("smells")
+        if (
+            _is_anchors(anchors)
+            and _is_smells(smells)
+            and not set(item) - {"key", "anchors", "smells"}
+        ):
+            return item["key"], Entry(
+                anchors=anchors, smells=None if smells is None else frozenset(smells)
+            )
     raise SnoozeError(
         f"{path}: expected each entry to be a snoozed key, or an object with "
-        f'"key" and an optional "anchors", got {_describe(item)}'
+        f'"key", an optional "smells" and an optional "anchors", got '
+        f"{_describe(item)}"
     )
 
 
@@ -56,6 +70,14 @@ def _is_anchors(anchors: object) -> bool:
         isinstance(anchor, str) and isinstance(content, str)
         for anchor, content in anchors.items()
     )
+
+
+def _is_smells(smells: object) -> bool:
+    if smells is None:
+        return True
+    return isinstance(smells, list) and all(
+        isinstance(smell, str) for smell in smells
+    ) and bool(smells)
 
 
 def _describe(data: object) -> str:
@@ -73,10 +95,15 @@ def save_index(entries: Index, project_dir: Path) -> None:
     _replace_atomically(path, json.dumps(written) + "\n")
 
 
-def _written(key: str, anchors: Anchors) -> str | dict:
-    if not anchors:
+def _written(key: str, entry: Entry) -> str | dict:
+    if entry.smells is None and not entry.anchors:
         return key
-    return {"key": key, "anchors": dict(sorted(anchors.items()))}
+    written: dict[str, object] = {"key": key}
+    if entry.smells is not None:
+        written["smells"] = sorted(entry.smells)
+    if entry.anchors:
+        written["anchors"] = dict(sorted(entry.anchors.items()))
+    return written
 
 
 def _replace_atomically(path: Path, content: str) -> None:

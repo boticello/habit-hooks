@@ -58,11 +58,11 @@ habit-sensors --all | jq .
 ]
 ```
 
-## Snooze current issues 
+## Snooze current issues
 
-Snoozes are checked into the repository as `.habit-hooks/snooze.json`, so the whole team shares the same list. The default snooze key is the file name (see [sensor-interface.spec.md](sensor-interface.spec.md)), so one snooze can cover every issue reported for that file.
+Snoozes are checked into the repository as `.habit-hooks/snooze.json`, so the whole team shares the same list. The default snooze key is the file name (see [sensor-interface.spec.md](sensor-interface.spec.md)), and each approval records the smells it was fed, so accepting one smell's pile does not silence the file's other smells. A key hand-written into the index as a bare string still approves every smell on that file at once.
 
-`--snooze` adds all current findings to the snooze list.
+`--snooze` adds the findings it is fed to the snooze list.
 
 (example continued from previous section)
 
@@ -71,7 +71,7 @@ habit-sensors --all | habit-snooze --snooze && habit-snooze --list
 ```
 🖥️ ✅
 ```text
-src/x.py
+src/x.py non-essential-comment
 ```
 
 ```bash
@@ -192,5 +192,64 @@ habit-sensors --all --no-snooze | habit-snooze --prune && habit-snooze --list
 ```
 🖥️ ✅
 ```text
-src/other.py
+src/other.py non-essential-comment
+```
+
+## A snooze covers only the smell it was fed
+
+(example continued from previous section)
+
+Onboarding a project with a pile of accepted findings is the one-time use of `--snooze`, and a run reports several smells for the same file — approving the file's duplicated code must not silence its oversized functions. Feeding `--snooze` a filtered stream accepts exactly what was filtered for, and the run keeps coaching everything else. Here the project grows a second smell on a new file: ruff is re-enabled and `src/y.py` imports a module it never uses, beside a comment the comment sensor will flag.
+
+📄.habit-hooks/config.toml
+```toml
+plugins = ["python"]
+
+[sensors.deptry]
+disabled = true
+```
+
+📄src/y.py
+```python
+import os
+
+ready = True
+# what y is for
+```
+
+```bash
+habit-sensors --all | jq 'map(select(.smell == "non-essential-comment"))' | habit-snooze --snooze && habit-snooze --list
+```
+🖥️ ✅
+```text
+src/other.py non-essential-comment
+src/y.py non-essential-comment
+```
+
+The unused import on `src/y.py` was never fed to `--snooze`, so the run keeps coaching it:
+
+```bash
+habit-sensors --all | jq .
+```
+🖥️ ✅
+```json
+[
+  {
+    "smell": "unused-import",
+    "details": {},
+    "issues": [
+      {
+        "key": "src/y.py",
+        "details": {
+          "file": "src/y.py",
+          "line": 1,
+          "column": 8,
+          "message": "`os` imported but unused",
+          "source": "ruff:F401"
+        }
+      }
+    ],
+    "language": "python"
+  }
+]
 ```

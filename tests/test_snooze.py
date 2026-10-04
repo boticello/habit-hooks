@@ -7,7 +7,7 @@ import pytest
 
 from habit_hooks import sensors
 from habit_hooks import snooze_lapse
-from habit_hooks.snooze import load_index, transform
+from habit_hooks.snooze import Entry, load_index, transform
 from habit_hooks.snooze_lapse import anchor_file, holds
 from snooze_project import a_project_with, aliased, snooze
 
@@ -35,20 +35,41 @@ def test_anchor_falls_back_to_the_key_without_details() -> None:
 
 
 def test_an_entry_recording_nothing_drops_every_snoozed_issue(tmp_path: Path) -> None:
-    kept = transform([_FINDING], {"src/x.ts": {}, "requests": {}}, tmp_path)
+    kept = transform(
+        [_FINDING],
+        {"src/x.ts": Entry(anchors={}), "requests": Entry(anchors={})},
+        tmp_path,
+    )
     assert kept == []
 
 
 def test_a_changed_file_resurfaces_only_its_own_issue(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src/y.py").write_text("import requests\n", encoding="utf-8")
-    index = {"src/x.ts": {"src/x.ts": "sha256:lapsed"}, "requests": {}}
+    index = {
+        "src/x.ts": Entry(anchors={"src/x.ts": "sha256:lapsed"}),
+        "requests": Entry(anchors={}),
+    }
     kept = transform([_FINDING], index, tmp_path)
     assert [issue["key"] for issue in kept[0]["issues"]] == ["src/x.ts"]
 
 
 def test_a_snoozed_issue_is_dropped_from_its_finding(tmp_path: Path) -> None:
-    kept = transform([_FINDING], {"src/x.ts": {}}, tmp_path)
+    kept = transform([_FINDING], {"src/x.ts": Entry(anchors={})}, tmp_path)
+    assert [issue["key"] for issue in kept[0]["issues"]] == ["requests"]
+
+
+def test_a_snoozed_smell_leaves_the_keys_other_smells_coached(
+    tmp_path: Path,
+) -> None:
+    index = {"src/x.ts": Entry(anchors={}, smells=frozenset({"unused-import"}))}
+    kept = transform([_FINDING], index, tmp_path)
+    assert [issue["key"] for issue in kept[0]["issues"]] == ["src/x.ts", "requests"]
+
+
+def test_a_snoozed_smell_still_drops_its_own_issues(tmp_path: Path) -> None:
+    index = {"src/x.ts": Entry(anchors={}, smells=frozenset({"oversized-file"}))}
+    kept = transform([_FINDING], index, tmp_path)
     assert [issue["key"] for issue in kept[0]["issues"]] == ["requests"]
 
 
@@ -59,7 +80,7 @@ def test_an_issue_whose_key_is_not_snoozed_is_never_dropped(tmp_path: Path) -> N
 
 def test_a_finding_without_issues_passes_through(tmp_path: Path) -> None:
     empty = {"smell": "duplicated-code", "details": {}, "issues": []}
-    assert transform([empty], {"src/x.ts": {}}, tmp_path) == [empty]
+    assert transform([empty], {"src/x.ts": Entry(anchors={})}, tmp_path) == [empty]
 
 
 def test_file_run_bypasses_the_snooze_transformer(tmp_path: Path) -> None:
@@ -100,8 +121,8 @@ def test_an_approval_covers_only_the_file_it_recorded(
     snooze(tmp_path, monkeypatch, aliased("src/b.py"))
 
     index = load_index(tmp_path)
-    assert holds(index["requests"], "src/b.py", tmp_path)
-    assert not holds(index["requests"], "src/a.py", tmp_path)
+    assert holds(index["requests"].anchors, "src/b.py", tmp_path)
+    assert not holds(index["requests"].anchors, "src/a.py", tmp_path)
 
 
 def test_a_file_that_only_now_reports_a_key_is_not_covered_by_another(
@@ -112,5 +133,5 @@ def test_a_file_that_only_now_reports_a_key_is_not_covered_by_another(
 
     a_project_with(tmp_path, "src/b.py", "import requests\nrequests.get()\n")
     index = load_index(tmp_path)
-    assert holds(index["requests"], "src/a.py", tmp_path)
-    assert not holds(index["requests"], "src/b.py", tmp_path)
+    assert holds(index["requests"].anchors, "src/a.py", tmp_path)
+    assert not holds(index["requests"].anchors, "src/b.py", tmp_path)
